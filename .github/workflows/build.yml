@@ -1,47 +1,70 @@
 name: Build Firmware
 
+# 触发条件：推送到main/master、打v*标签、PR提交
 on:
   push:
-    branches:
-      - main
-      - master
-    tags:
-      - 'v*'
+    branches: [ main, master ]
+    tags: [ 'v*' ]
   pull_request:
-    branches:
-      - main
-      - master
+    branches: [ main, master ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: write  # 用于创建GitHub Release
 
     steps:
+      # 1. 拉取代码（包含Git子模块，嵌入式项目必备）
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          submodules: true
+          fetch-depth: 0
 
-      - name: Set up Python
+      # 2. 固定Python版本，提升稳定性
+      - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
-          python-version: '3.x'
+          python-version: '3.11'
+          cache: 'pip'
 
-      - name: Install PlatformIO
-        run: pip install platformio
+      # 3. 缓存PlatformIO依赖（大幅加速构建）
+      - name: Cache PlatformIO packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio
+            .pio
+          key: ${{ runner.os }}-pio-${{ hashFiles('**/platformio.ini') }}
+          restore-keys: ${{ runner.os }}-pio-
 
-      - name: Build firmware
+      # 4. 安装PlatformIO核心工具
+      - name: Install PlatformIO Core
+        run: pip install -U platformio
+
+      # 5. 编译固件（核心命令）
+      - name: Build firmware with PlatformIO
         run: platformio run
 
+      # 6. 上传构建产物（Actions页面可下载）
       - name: Upload firmware artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: firmware
-          path: output/
+          name: firmware-build
+          # 匹配所有编译生成的.bin固件文件（正确路径）
+          path: .pio/build/**/*.bin
           if-no-files-found: error
 
-      - name: Create release and upload firmware
+      # 7. 仅在打标签时：自动创建Release并上传固件
+      - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: output/*.bin
+          name: Release ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          # 上传所有固件文件
+          files: .pio/build/**/*.bin
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
