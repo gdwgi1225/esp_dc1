@@ -46,7 +46,7 @@ jobs:
       - name: Upload firmware artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: firmware
+          name: dc1
           path: .pio/build/**/*.bin
           if-no-files-found: error
 
